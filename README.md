@@ -1,0 +1,108 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Arcane Kombat — Single-File</title>
+<style>
+  html,body{margin:0;height:100%;background:#06080f;color:#e5e7eb;font-family:Inter,system-ui,Segoe UI,Roboto,Helvetica,Arial,sans-serif}
+  #screen-wrapper{position:relative;min-height:100dvh}
+  #game-canvas{display:block;width:100%;height:56.25vw;max-height:78dvh;background:#0a0f1a;border-top:1px solid #ffffff14;border-bottom:1px solid #ffffff14}
+</style>
+</head>
+<body>
+<div id="screen-wrapper"></div>
+<script>
+const canvas=document.createElement('canvas');
+canvas.id='game-canvas';
+document.getElementById('screen-wrapper').appendChild(canvas);
+const ctx=canvas.getContext('2d');
+function resizeCanvas(){ canvas.width=window.innerWidth; canvas.height=window.innerHeight*0.56; }
+window.addEventListener('resize',resizeCanvas); resizeCanvas();
+
+// ---------------- Players ----------------
+let P1={x:200,y:250,w:40,h:70,facing:1,block:false,attackCooldown:0,projectiles:[],velY:0,jumping:false,tmpl:{color:'#6d28d9',aura:'#a78bfa',specials:{projectile:{speed:6,dmg:10,knock:8,size:12,trail:'spark'}}}};
+let P2={x:600,y:250,w:40,h:70,facing:-1,block:false,attackCooldown:0,projectiles:[],velY:0,jumping:false,tmpl:{color:'#ef4444',aura:'#f87171',specials:{projectile:{speed:6,dmg:10,knock:8,size:12,trail:'fire'}}} }};
+
+// ---------------- Auxiliares ----------------
+function hex(c,a=1){ return c; }
+function drawGlow(x,y,r,color,alpha){ ctx.save(); ctx.globalAlpha=alpha; let grd=ctx.createRadialGradient(x,y,0,x,y,r); grd.addColorStop(0,color); grd.addColorStop(1,'transparent'); ctx.fillStyle=grd; ctx.beginPath(); ctx.arc(x,y,r,0,Math.PI*2); ctx.fill(); ctx.restore(); }
+function roundedRect(x,y,w,h,r,fill,grad){ ctx.beginPath(); ctx.moveTo(x+r,y); ctx.arcTo(x+w,y,x+w,y+h,r); ctx.arcTo(x+w,y+h,x,y+h,r); ctx.arcTo(x,y+h,x,y,r); ctx.arcTo(x,y,x+w,y,r); if(fill){ if(grad) ctx.fillStyle=grad; ctx.fill(); else ctx.fill(); } else ctx.stroke(); }
+function particleCore(type,count,size){ ctx.fillStyle=type==='fire'?'#f87171':'#facc15'; for(let i=0;i<count;i++){ ctx.beginPath(); ctx.arc(Math.random()*size*2-size,Math.random()*size*2-size,Math.random()*size/2,0,Math.PI*2); ctx.fill(); } }
+
+// ---------------- Draw Fighters ----------------
+function drawFighter(p){
+  if(!p) return;
+  const x=p.x,y=p.y;
+  ctx.globalAlpha=0.25; ctx.beginPath(); ctx.ellipse(x,y+10,36,12,0,0,Math.PI*2); ctx.fillStyle='#000'; ctx.fill(); ctx.globalAlpha=1;
+  const auraRadius=30+Math.sin(performance.now()/200)*6;
+  drawGlow(x,y-40,auraRadius,p.tmpl.aura,0.25);
+  const grd=ctx.createLinearGradient(x-20,y-80,x+20,y-10); grd.addColorStop(0,p.tmpl.color); grd.addColorStop(1,hex(p.tmpl.color,0.6));
+  roundedRect(x-20,y-80,40,70,12,true,grd);
+  ctx.fillStyle='#f0f0f0'; roundedRect(x-12,y-105,24,26,12,true);
+  ctx.save(); ctx.translate(x,y-50); const swing=Math.sin(performance.now()/150)*10*p.facing; ctx.fillStyle=hex(p.tmpl.color,0.8); roundedRect(-28+swing,-20,16,44,8,true); roundedRect(12+swing,-20,16,44,8,true); ctx.restore();
+  ctx.fillStyle=hex(p.tmpl.color,0.5); roundedRect(x-18,y-14,16,28,8,true); roundedRect(x+2,y-14,16,28,8,true);
+  drawGlow(x,y-102,12,p.tmpl.aura,0.4);
+  if(p.block){ ctx.globalAlpha=0.5; roundedRect(x-28,y-60,56,40,12,true); ctx.globalAlpha=1; }
+  p.projectiles.forEach(b=>drawProjectile(b));
+}
+
+// ---------------- Attack & Special ----------------
+function attack(p){ if(!p||p.attackCooldown>0)return; p.attackCooldown=8; const opp=p===P1?P2:P1; const hx=p.x+p.facing*(p.w/2+28),hy=p.y-20; if(opp&&Math.abs(hx-opp.x)<(opp.w/2+24)&&Math.abs(hy-opp.y)<(opp.h/2+24)){} else { for(let i=0;i<6;i++) emitTrail({x:hx+Math.random()*8-4,y:hy+Math.random()*8-4,vx:Math.random()*1-0.5,vy:Math.random()*1-0.5,type:'spark',life:12}); } }
+function special(p){ if(!p||p.attackCooldown>0)return; p.attackCooldown=10; const s=p.tmpl.specials.projectile; p.projectiles.push({x:p.x+p.facing*30,y:p.y-40,vx:p.facing*s.speed,vy:0,life:40,dmg:s.dmg,knock:s.knock,size:s.size,trail:s.trail}); for(let i=0;i<20;i++) particles.push({x:p.x,y:p.y-40,vx:(Math.random()-0.5)*6,vy:(Math.random()-0.5)*3,life:20+Math.random()*10,type:s.trail}); }
+
+// ---------------- Projectiles & Particles ----------------
+function drawProjectile(b){ if(!b)return; ctx.save(); ctx.translate(b.x,b.y); particleCore(b.trail||'fire',16,b.size*1.2); ctx.restore(); }
+let particles=[]; function emitTrail(p){ particles.push(p); }
+
+// ---------------- Keyboard ----------------
+const keys={};
+window.addEventListener('keydown',e=>{ keys[e.key.toLowerCase()]=true; });
+window.addEventListener('keyup',e=>{ keys[e.key.toLowerCase()]=false; });
+
+function handleInput(p,isP1){
+  // Horizontal movement
+  if(isP1){
+    if(keys['a']){ p.x-=4; p.facing=-1; }
+    if(keys['d']){ p.x+=4; p.facing=1; }
+    if(keys['w'] && !p.jumping){ p.velY=-12; p.jumping=true; }
+    if(keys['f']) attack(p);
+    if(keys['g']) special(p);
+  } else {
+    if(keys['arrowleft']){ p.x-=4; p.facing=-1; }
+    if(keys['arrowright']){ p.x+=4; p.facing=1; }
+    if(keys['arrowup'] && !p.jumping){ p.velY=-12; p.jumping=true; }
+    if(keys[',']) attack(p);
+    if(keys['.']) special(p);
+  }
+}
+
+// ---------------- Physics ----------------
+function applyPhysics(p){
+  p.velY+=0.5; p.y+=p.velY;
+  if(p.y>250){ p.y=250; p.velY=0; p.jumping=false; }
+}
+
+// ---------------- Game Loop ----------------
+function gameLoop(){
+  ctx.clearRect(0,0,canvas.width,canvas.height);
+  handleInput(P1,true); handleInput(P2,false);
+  applyPhysics(P1); applyPhysics(P2);
+  drawFighter(P1); drawFighter(P2);
+
+  // cooldowns
+  if(P1.attackCooldown>0) P1.attackCooldown--;
+  if(P2.attackCooldown>0) P2.attackCooldown--;
+
+  // projéteis
+  [P1,P2].forEach(p=>{ p.projectiles=p.projectiles.filter(b=>b.life>0); p.projectiles.forEach(b=>{ b.x+=b.vx; b.y+=b.vy; b.life--; }); });
+  // partículas
+  particles=particles.filter(pt=>pt.life>0);
+  particles.forEach(pt=>{ pt.x+=pt.vx; pt.y+=pt.vy; pt.life--; drawProjectile(pt); });
+
+  requestAnimationFrame(gameLoop);
+}
+requestAnimationFrame(gameLoop);
+</script>
+</body>
+</html>
